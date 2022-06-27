@@ -1,167 +1,97 @@
-#include "rsa.h"
-
-
-/**
-  * main - program entry
-  * @argc: argument count
-  * @argv: vector
-  *
-  * Return: 0 in success, 1 on failure
-  */
-int main(int argc, char *argv[])
-{
-	(void)(argc);
-
-	if (argv[1] == NULL)
-	{
-		fprintf(stderr, "Usage: ./rsa <file>\n");
-		exit(1);
-	}
-
-	operate(argv[1]);
-	exit(0);
-}
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <gmp.h>
 
 /**
-  * operate - extracts line from file and pass to handler
-  * @str: pointer to file name
+  * factor - factorization handler function
+  * @p: integer pointer
+  * @n: integer
   *
   * Return: void
   */
-void operate(char *str)
+void factor(mpz_t *p, mpz_t n)
 {
-	FILE *file;
-	char line[1024];
-	long long digit;
-	mpz_t n;
+	mpz_t r;
+	
+	mpz_set_ui(*p, 2U);
+
+	if (mpz_divisible_ui_p(n, 2U))
+		return;
+
+	mpz_init(r);
+	mpz_sqrt(r, n);
+	mpz_set_ui(*p, 3U);
+	mpz_sqrt(r, n);
+
+	while (!mpz_divisible_p(n, *p) && mpz_cmp(*p, r) < 0)
+		mpz_add_ui(*p, *p, 2U);
+		
+	if (!mpz_divisible_p(n, *p))
+		mpz_set(*p, n);
+
+	mpz_clear(r);
+}
+
+/**
+  * main - Entry
+  * @ac: argument count
+  * @av: string vector
+  *
+  * Return: integer
+  */
+int main(int ac, char **av)
+{
+	FILE *fp = NULL;
+	char *line = NULL;
+	size_t line_size = 0;
+	ssize_t line_length = -1;
+	mpz_t n, p, q, r;
 
 	mpz_init(n);
-	file = fopen(str, "r");
+	mpz_init(p);
+	mpz_init(q);
+	mpz_init(r);
 
-	if (file == NULL)
+	if (ac != 2)
 	{
-		fprintf(stderr, "Error: could not open file:-> %s\n", str);
-		exit(1);
+		fprintf(stderr, "Error: usage: factors <file>\n");
+		exit(EXIT_FAILURE);
 	}
 
-	while (fgets(line, sizeof(line), file) != NULL)
+	fp = fopen(av[1], "r");
+	
+	if (!fp)
 	{
-		line[strlen(line) - 1] = '\0';
-
-		if (line[0] == '\0')
-			continue;
-
-		if (strlen(line) > 19)
-		{
-			mpz_set_str(n, line, 10);
-			factorize(n);
-		}
-		else
-		{
-			digit = atoll(line);
-			factorise((unsigned long long) digit);
-		}
-	}
-	fclose(file);
-}
-
-
-/**
-  * factorize - uses GNUmultiprecision library to factorize very large integers
-  * @n: integer of type mpz_t
-  *
-  * Return: 1, always success
-  */
-int factorize(mpz_t n)
-{
-	mpz_t a, b, d, q, r;
-	int i, flag, primes[] = {2, 3, 5, 7};
-
-	mpz_init(a), mpz_init(b), mpz_init(d), mpz_init(q), mpz_init(r);
-	for (i = 0; i < 4; i++)
-	{
-		mpz_set_si(d, primes[i]), mpz_mod(r, n, d), mpz_set_ui(a, 0);
-		if (mpz_cmp(r, a) == 0)
-		{
-			mpz_divexact(q, n, d);
-			mpz_out_str(stdout, 10, n), printf("=");
-			mpz_out_str(stdout, 10, q), printf("*");
-			mpz_out_str(stdout, 10, d), printf("\n");
-			return (0);
-		}
+		fprintf(stderr, "Error: cannot open file %s\n", av[1]);
+		exit(EXIT_FAILURE);
 	}
 
-	mpz_sqrtrem(q, r, n), mpz_add_ui(q, q, 1);
-	mpz_mul(r, q, q), mpz_sub(d, r, n);
-	flag = mpz_perfect_square_p(d);
-
-	while (flag == 0)
+	while ((line_length = getline(&line, &line_size, fp)) != -1)
 	{
-		mpz_add_ui(q, q, 1);
-		mpz_mul(q, q, q);
-		mpz_sub(d, q, n);
-		flag = mpz_perfect_square_p(d);
+		line[line_length - 1] = '\0';
+		
+		mpz_set_str(n, line, 10);
+
+		factor(&p, n);
+		mpz_tdiv_q(q, n, p);
+
+		mpz_out_str(stdout, 10, n);
+		printf("=");
+		mpz_out_str(stdout, 10, q);
+		printf("*");
+		mpz_out_str(stdout, 10, p);
+		printf("\n");
 	}
-	mpz_sqrt(d, d), mpz_add(a, q, d), mpz_sub(b, q, d);
-	mpz_out_str(stdout, 10, n), printf("=");
-	mpz_out_str(stdout, 10, a), printf("*");
-	mpz_out_str(stdout, 10, b), printf("\n");
+
+	free(line);
+	fclose(fp);
+
+	mpz_clear(n);
+	mpz_clear(p);
+	mpz_clear(q);
+	mpz_clear(r);
+
 	return (0);
-}
-
-/**
-  * factorise - uses fermant's algorithm idea to factorise optimally
-  * @n: integer
-  *
-  * Return: 1, always success
-  */
-int factorise(unsigned long long n)
-{
-	unsigned long long a, b;
-	unsigned long long i, primes[] = {2, 3, 5, 7};
-
-	for (i = 0; i < 4; i++)
-	{
-		if ((n % primes[i]) == 0)
-		{
-			b = n / primes[i];
-			fprintf(stdout, "%llu=%llu*%llu\n", n, b, primes[i]);
-			return (0);
-		}
-	}
-
-	a = (unsigned long long) ceil(sqrt((double) n));
-	b = (a * a) - n;
-	a = (unsigned long long) ceil(sqrt((double) n));
-	b = (a * a) - n;
-
-	while (!square(b))
-	{
-		a++;
-		b = (a * a) - n;
-	}
-
-	b = (unsigned long long) sqrt((double) b);
-
-	fprintf(stdout, "%llu=%llu*%llu\n", n, a + b, a - b);
-	return (0);
-}
-
-/**
-  * square - helper to determine if a number has an integer square root
-  * @b: integer
-  *
-  * Return: boolean, true if square else false
-  */
-bool square(unsigned long long b)
-{
-	double c;
-
-	c = sqrt((double) b);
-
-	if (ceil(c * c) == (double) b)
-		return (true);
-	return (false);
 }
 
